@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Snake clásico jugable en el navegador — port web del proyecto en Ruby de Rodrigo Ulloa." />
+  <meta name="theme-color" content="#0f1020" />
+  <title>Snake 🐍</title>
+  <style>
+    :root {
+      --bg: #0f1020;
+      --panel: #1a1c33;
+      --accent: #3ddc84;
+      --accent-dim: #2bb56b;
+      --food: #ff7043;
+      --text: #e6e6f0;
+      --muted: #8a8ca8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 16px;
+      touch-action: none;
+    }
+    header { text-align: center; }
+    h1 { font-size: 1.6rem; letter-spacing: 1px; }
+    .scores {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      margin-top: 6px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .scores b { color: var(--accent); font-size: 1.1rem; }
+    .stage {
+      position: relative;
+      width: min(90vw, 78vh, 520px);
+      aspect-ratio: 1 / 1;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: var(--panel);
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.45);
+      image-rendering: pixelated;
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: rgba(15,16,32,.82);
+      border-radius: 12px;
+      text-align: center;
+      padding: 20px;
+      backdrop-filter: blur(2px);
+    }
+    .overlay.hidden { display: none; }
+    .overlay h2 { font-size: 1.4rem; }
+    .overlay p { color: var(--muted); max-width: 28ch; line-height: 1.4; }
+    button {
+      background: var(--accent);
+      color: #07210f;
+      border: 0;
+      padding: 12px 22px;
+      font-size: 1rem;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background .15s ease, transform .05s ease;
+    }
+    button:hover { background: var(--accent-dim); }
+    button:active { transform: scale(.97); }
+    footer { color: var(--muted); font-size: .8rem; text-align: center; }
+    footer a { color: var(--accent); text-decoration: none; }
+    .hint { color: var(--muted); font-size: .8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Snake 🐍</h1>
+    <div class="scores">
+      <span>Puntaje: <b id="score">0</b></span>
+      <span>Récord: <b id="best">0</b></span>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="game" width="420" height="420"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ovTitle">Snake</h2>
+      <p id="ovText">Usa las flechas o WASD. En móvil, desliza el dedo.</p>
+      <button id="startBtn">Jugar ▶</button>
+    </div>
+  </div>
+
+  <p class="hint">Flechas / WASD &nbsp;·&nbsp; Espacio para pausar &nbsp;·&nbsp; Swipe en móvil</p>
+  <footer>
+    Port web del <a href="https://github.com/RodrigoUlloa/Snake" target="_blank" rel="noopener">Snake en Ruby</a> · por Rodrigo Ulloa
+  </footer>
+
+  <script>
+  "use strict";
+  /* ============================================================
+     Snake — port a JS/Canvas del proyecto original en Ruby.
+     Conserva la separación en capas: Model (estado) / Actions
+     (lógica pura) / View (render en canvas + loop).
+     ============================================================ */
+
+  // ---------- Model ----------
+  const COLS = 21;
+  const ROWS = 21;
+  const Dir = {
+    UP:    { row: -1, col: 0 },
+    DOWN:  { row:  1, col: 0 },
+    LEFT:  { row: 0, col: -1 },
+    RIGHT: { row: 0, col:  1 },
+  };
+
+  function initialState() {
+    const midR = Math.floor(ROWS / 2);
+    const midC = Math.floor(COLS / 2);
+    return {
+      snake: [ { row: midR, col: midC }, { row: midR, col: midC - 1 } ], // cabeza primero
+      dir: Dir.RIGHT,
+      pendingDir: Dir.RIGHT,
+      food: randomFood([ { row: midR, col: midC } ]),
+      score: 0,
+      finished: false,
+    };
+  }
+
+  function randomFood(snake) {
+    // Genera comida en una casilla libre (mejora sobre el original).
+    let pos;
+    do {
+      pos = { row: (Math.random() * ROWS) | 0, col: (Math.random() * COLS) | 0 };
+    } while (snake.some(s => s.row === pos.row && s.col === pos.col));
+    return pos;
+  }
+
+  // ---------- Actions (puras: reciben estado, devuelven estado) ----------
+  function isOpposite(a, b) {
+    return a.row === -b.row && a.col === -b.col;
+  }
+
+  function changeDirection(state, dir) {
+    // No se puede invertir 180° (misma regla que el Ruby original).
+    if (!isOpposite(state.dir, dir)) {
+      state.pendingDir = dir;
+    }
+    return state;
+  }
+
+  function nextHead(state) {
+    const head = state.snake[0];
+    return { row: head.row + state.pendingDir.row, col: head.col + state.pendingDir.col };
+  }
+
+  function hitsWall(p) {
+    return p.row < 0 || p.row >= ROWS || p.col < 0 || p.col >= COLS;
+  }
+
+  function hitsSelf(snake, p, willGrow) {
+    // Si no crece, la cola se libera, así que no cuenta el último segmento.
+    const body = willGrow ? snake : snake.slice(0, -1);
+    return body.some(s => s.row === p.row && s.col === p.col);
+  }
+
+  function moveSnake(state) {
+    state.dir = state.pendingDir;
+    const head = nextHead(state);
+    const eats = head.row === state.food.row && head.col === state.food.col;
+
+    if (hitsWall(head) || hitsSelf(state.snake, head, eats)) {
+      state.finished = true;
+      return state;
+    }
+
+    state.snake.unshift(head);
+    if (eats) {
+      state.score += 1;
+      state.food = randomFood(state.snake);
+    } else {
+      state.snake.pop();
+    }
+    return state;
+  }
+
+  // ---------- View + Loop ----------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const cell = canvas.width / COLS;
+
+  const elScore = document.getElementById("score");
+  const elBest = document.getElementById("best");
+  const overlay = document.getElementById("overlay");
+  const ovTitle = document.getElementById("ovTitle");
+  const ovText = document.getElementById("ovText");
+  const startBtn = document.getElementById("startBtn");
+
+  const BEST_KEY = "snake.best";
+  let best = parseInt(localStorage.getItem(BEST_KEY) || "0", 10);
+  elBest.textContent = best;
+
+  let state = initialState();
+  let running = false;
+  let paused = false;
+  let lastTick = 0;
+
+  function tickInterval() {
+    // Acelera suavemente con el puntaje (mín 70ms).
+    return Math.max(70, 140 - state.score * 3);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // comida
+    drawCell(state.food.col, state.food.row, getComputedStyle(document.documentElement).getPropertyValue("--food"), true);
+
+    // serpiente
+    state.snake.forEach((s, i) => {
+      const head = i === 0;
+      drawCell(s.col, s.row, head ? "#5ff0a0" : "#3ddc84");
+    });
+  }
+
+  function drawCell(col, row, color, circle) {
+    const x = col * cell, y = row * cell, pad = cell * 0.08;
+    ctx.fillStyle = color;
+    if (circle) {
+      ctx.beginPath();
+      ctx.arc(x + cell / 2, y + cell / 2, cell / 2 - pad, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      roundRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2, cell * 0.22);
+      ctx.fill();
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function loop(ts) {
+    if (!running) return;
+    requestAnimationFrame(loop);
+    if (paused) return;
+    if (ts - lastTick < tickInterval()) return;
+    lastTick = ts;
+
+    moveSnake(state);
+    elScore.textContent = state.score;
+    draw();
+
+    if (state.finished) gameOver();
+  }
+
+  function startGame() {
+    state = initialState();
+    running = true;
+    paused = false;
+    lastTick = 0;
+    elScore.textContent = 0;
+    overlay.classList.add("hidden");
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function gameOver() {
+    running = false;
+    if (state.score > best) {
+      best = state.score;
+      localStorage.setItem(BEST_KEY, String(best));
+      elBest.textContent = best;
+    }
+    ovTitle.textContent = "Game Over";
+    ovText.textContent = `Puntaje: ${state.score}. ¡Vuelve a intentarlo!`;
+    startBtn.textContent = "Reintentar ↻";
+    overlay.classList.remove("hidden");
+  }
+
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    ovTitle.textContent = "Pausa";
+    ovText.textContent = "Presiona Espacio o toca Continuar.";
+    startBtn.textContent = "Continuar ▶";
+    overlay.classList.toggle("hidden", !paused);
+    if (!paused) requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  const keyMap = {
+    ArrowUp: Dir.UP, ArrowDown: Dir.DOWN, ArrowLeft: Dir.LEFT, ArrowRight: Dir.RIGHT,
+    w: Dir.UP, s: Dir.DOWN, a: Dir.LEFT, d: Dir.RIGHT,
+    W: Dir.UP, S: Dir.DOWN, A: Dir.LEFT, D: Dir.RIGHT,
+  };
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === " ") { e.preventDefault();
+      if (!running && overlay.classList.contains("hidden") === false && ovTitle.textContent !== "Pausa") return;
+      togglePause(); return;
+    }
+    const dir = keyMap[e.key];
+    if (dir) { e.preventDefault(); changeDirection(state, dir); }
+  });
+
+  startBtn.addEventListener("click", () => {
+    if (paused) { togglePause(); } else { startGame(); }
+  });
+
+  // Swipe táctil
+  let touchStart = null;
+  canvas.addEventListener("touchstart", (e) => {
+    touchStart = e.changedTouches[0];
+  }, { passive: true });
+  canvas.addEventListener("touchend", (e) => {
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.clientX;
+    const dy = t.clientY - touchStart.clientY;
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return; // tap, ignora
+    if (Math.abs(dx) > Math.abs(dy)) {
+      changeDirection(state, dx > 0 ? Dir.RIGHT : Dir.LEFT);
+    } else {
+      changeDirection(state, dy > 0 ? Dir.DOWN : Dir.UP);
+    }
+    touchStart = null;
+  }, { passive: true });
+
+  // Render inicial (serpiente quieta detrás del overlay)
+  draw();
+  </script>
+</body>
+</html>
