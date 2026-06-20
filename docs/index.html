@@ -336,12 +336,13 @@
     if (paused) { togglePause(); } else { startGame(); }
   });
 
-  // Swipe táctil
+  // Swipe táctil: se escucha en toda la ventana, así se puede deslizar
+  // desde cualquier parte de la pantalla (no solo sobre el tablero).
   let touchStart = null;
-  canvas.addEventListener("touchstart", (e) => {
+  window.addEventListener("touchstart", (e) => {
     touchStart = e.changedTouches[0];
   }, { passive: true });
-  canvas.addEventListener("touchend", (e) => {
+  window.addEventListener("touchend", (e) => {
     if (!touchStart) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStart.clientX;

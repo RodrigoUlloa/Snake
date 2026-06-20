@@ -1,12 +1,12 @@
 # Snake 🐍
 
-Clásico juego de la serpiente. Empezó como un proyecto en **Ruby + Ruby2D** (con lógica desacoplada y tests) y ahora cuenta con un **port web en JavaScript + HTML5 Canvas**, jugable directamente desde el navegador.
+Clásico juego de la serpiente, jugable directamente desde el navegador. Hecho en **JavaScript + HTML5 Canvas**, sin dependencias ni build: un único archivo estático (~10 KB).
 
 ## ▶️ Jugar ahora
 
 **[https://rodrigoulloa.github.io/Snake/](https://rodrigoulloa.github.io/Snake/)**
 
-Sin instalar nada: abre la URL y juega.
+Sin instalar nada: abre la URL y juega, en desktop o en celular.
 
 ## 🎮 Cómo se juega
 
@@ -17,37 +17,23 @@ Sin instalar nada: abre la URL y juega.
 
 ### Controles
 
-| Acción | Teclado | Móvil |
+| Acción | Desktop | Móvil |
 |---|---|---|
-| Mover | Flechas o `W` `A` `S` `D` | Deslizar el dedo (swipe) |
+| Mover | Flechas o `W` `A` `S` `D` | Deslizar el dedo (swipe) desde cualquier parte de la pantalla |
 | Pausar / continuar | `Espacio` | Botón en pantalla |
 | Reiniciar | Botón **Reintentar** | Botón **Reintentar** |
 
-## 🗂️ Estructura del proyecto
+## 🏗️ Arquitectura
 
-```
-docs/index.html   → Versión web (JS/Canvas). Lo que sirve GitHub Pages.
-src/              → Versión original en Ruby (escritorio, Ruby2D)
-  model/          → Estado del juego
-  actions/        → Lógica pura del juego
-  view/           → Render con Ruby2D
-test/             → Tests (Minitest) de la lógica
-```
+Todo vive en `docs/index.html`, organizado en capas claras y desacopladas:
 
-El port web conserva la misma separación en capas **Model / Actions (puras) / View**.
+- **Model** — estado del juego (grilla, serpiente, comida, dirección).
+- **Actions** — lógica pura: funciones que reciben un estado y devuelven el siguiente (mover, comer, validar dirección, colisiones). Sin efectos sobre el DOM.
+- **View + Loop** — render en `<canvas>` y el game loop con `requestAnimationFrame`.
 
-## 💻 Versión Ruby (escritorio)
-
-Requiere Ruby y las gemas del `Gemfile`:
-
-```bash
-bundle install
-ruby src/app.rb     # ejecuta el juego en una ventana de escritorio
-ruby -Itest test/actions_test.rb   # corre los tests
-```
-
-> Nota: la versión Ruby usa Ruby2D (gráficos nativos de escritorio) y no corre en el navegador; para jugar en la web se usa el port de `docs/`.
+Esta separación mantiene la lógica del juego testeable e independiente de cómo se dibuja.
 
 ## 🚀 Despliegue
 
-La versión web es estática (un único archivo HTML, ~10 KB, sin dependencias). Se publica con **GitHub Pages** desde la carpeta `/docs` de la rama `master`.
+Sitio 100% estático. Se publica con **GitHub Pages** desde la carpeta `/docs` de la rama `master`
+(*Settings → Pages → Deploy from a branch → `master` / `/docs`*).
